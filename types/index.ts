@@ -11,6 +11,9 @@ export interface Database {
           category: string;
           transaction_date: string;
           memo: string | null;
+          item_name: string | null;
+          box_count: number | null;
+          auction_price: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -21,6 +24,9 @@ export interface Database {
           category: string;
           transaction_date: string;
           memo?: string | null;
+          item_name?: string | null;
+          box_count?: number | null;
+          auction_price?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -31,6 +37,9 @@ export interface Database {
           category?: string;
           transaction_date?: string;
           memo?: string | null;
+          item_name?: string | null;
+          box_count?: number | null;
+          auction_price?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -52,6 +61,9 @@ export interface TransactionFormData {
   type: TransactionType;
   amount: string;
   category: string;
+  item_name: string;
+  box_count: string;
+  auction_price: string;
   transaction_date: string;
   memo: string;
 }

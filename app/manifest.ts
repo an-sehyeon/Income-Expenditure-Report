@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "수익지출관리",
-    short_name: "수익지출",
-    description: "개인용 수익/지출 관리 웹앱",
+    name: "농산물 수익지출관리",
+    short_name: "농산물수익",
+    description: "농산물 경매 매출과 농사 지출을 관리하는 개인용 웹앱",
     start_url: "/",
     scope: "/",
     display: "standalone",

@@ -7,9 +7,21 @@ create table if not exists public.transactions (
   category text not null,
   transaction_date date not null,
   memo text,
+  item_name text,
+  box_count integer,
+  auction_price numeric(15, 2),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.transactions
+add column if not exists item_name text;
+
+alter table public.transactions
+add column if not exists box_count integer;
+
+alter table public.transactions
+add column if not exists auction_price numeric(15, 2);
 
 create or replace function public.set_updated_at()
 returns trigger

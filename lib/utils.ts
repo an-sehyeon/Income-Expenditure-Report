@@ -1,5 +1,7 @@
 export function formatAmount(amount: number): string {
-  return `${Math.round(amount).toLocaleString("ko-KR")}원`;
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+
+  return `${Math.round(safeAmount).toLocaleString("ko-KR")}원`;
 }
 
 export function formatDate(dateText: string): string {
@@ -45,4 +47,27 @@ export function parseAmountInput(value: string): number {
   const digits = onlyDigits(value);
 
   return digits ? Number(digits) : 0;
+}
+
+export function safeNumber(value: unknown): number {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const normalized = typeof value === "string" ? value.replace(/,/g, "").trim() : value;
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function safeInteger(value: unknown): number {
+  const parsed = parseInt(String(value ?? "0"), 10);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function formatProfitRate(rate: number): string {
+  const safeRate = Number.isFinite(rate) ? rate : 0;
+
+  return `${safeRate.toFixed(1)}%`;
 }
