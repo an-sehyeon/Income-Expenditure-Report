@@ -91,7 +91,7 @@ export default function Page() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
 
   const loadTransactions = useCallback(async () => {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !supabase) {
       setErrorMessage(".env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 설정해주세요.");
       setLoading(false);
       return;
@@ -160,6 +160,11 @@ export default function Page() {
     event.preventDefault();
     const payload = toPayload(form);
 
+    if (!supabase) {
+      setErrorMessage(".env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 설정해주세요.");
+      return;
+    }
+
     if (!payload.amount || !payload.category || !payload.transaction_date) {
       setErrorMessage("금액, 카테고리, 날짜를 입력해주세요.");
       return;
@@ -192,6 +197,11 @@ export default function Page() {
 
     const payload = toPayload(editingForm);
 
+    if (!supabase) {
+      setErrorMessage(".env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 설정해주세요.");
+      return;
+    }
+
     if (!payload.amount || !payload.category || !payload.transaction_date) {
       setErrorMessage("수정할 금액, 카테고리, 날짜를 입력해주세요.");
       return;
@@ -215,6 +225,11 @@ export default function Page() {
   }
 
   async function handleDelete(id: string) {
+    if (!supabase) {
+      setErrorMessage(".env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 설정해주세요.");
+      return;
+    }
+
     const confirmed = window.confirm("정말 삭제하시겠습니까?");
 
     if (!confirmed) {
