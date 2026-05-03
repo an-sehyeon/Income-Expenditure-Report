@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Home,
   List,
+  LockKeyhole,
   Loader2,
   Pencil,
   Plus,
@@ -26,6 +27,8 @@ import {
   XAxis,
   YAxis
 } from "recharts";
+import { PasscodeLock } from "@/components/PasscodeLock";
+import { PASSCODE_STORAGE_KEY, PASSCODE_UNLOCK_DURATION_MS } from "@/lib/passcode";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import {
   formatAmount,
@@ -237,6 +240,8 @@ function getAvailableYears(transactions: Transaction[]): number[] {
 }
 
 export default function Page() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
   const [activeTab, setActiveTab] = useState<ViewTab>("home");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [form, setForm] = useState<TransactionFormData>(emptyForm());
@@ -250,6 +255,14 @@ export default function Page() {
   const [selectedMonth, setSelectedMonth] = useState(monthInputValue());
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    const storedUntil = window.localStorage.getItem(PASSCODE_STORAGE_KEY);
+    const unlockedUntil = storedUntil ? Number(storedUntil) : 0;
+
+    setIsUnlocked(Number.isFinite(unlockedUntil) && unlockedUntil > Date.now());
+    setAuthChecked(true);
+  }, []);
 
   const loadTransactions = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -316,8 +329,22 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    if (!isUnlocked) {
+      return;
+    }
+
     void loadTransactions();
-  }, [loadTransactions]);
+  }, [isUnlocked, loadTransactions]);
+
+  function handleUnlock() {
+    window.localStorage.setItem(PASSCODE_STORAGE_KEY, String(Date.now() + PASSCODE_UNLOCK_DURATION_MS));
+    setIsUnlocked(true);
+  }
+
+  function handleLock() {
+    window.localStorage.removeItem(PASSCODE_STORAGE_KEY);
+    setIsUnlocked(false);
+  }
 
   const years = useMemo(() => {
     return getAvailableYears(transactions);
@@ -518,6 +545,18 @@ export default function Page() {
     });
   }
 
+  if (!authChecked) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-app-background px-5">
+        <p className="text-sm font-semibold text-app-muted">잠금 상태 확인 중...</p>
+      </main>
+    );
+  }
+
+  if (!isUnlocked) {
+    return <PasscodeLock onUnlock={handleUnlock} />;
+  }
+
   return (
     <main className="min-h-screen bg-app-background">
       <div className="mx-auto flex min-h-screen max-w-md flex-col bg-app-background shadow-soft">
@@ -532,18 +571,28 @@ export default function Page() {
                 width={48}
               />
               <div className="min-w-0">
-                <h1 className="truncate text-xl font-bold tracking-normal text-app-ink">기선이네 수익지출관리</h1>
+                <h1 className="truncate text-xl font-bold tracking-normal text-app-ink">62팜 수익지출관리</h1>
                 <p className="mt-1 text-sm text-app-muted">매출과 지출 관리</p>
               </div>
             </div>
-            <button
-              aria-label="거래 새로고침"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-app-line bg-white text-app-ink"
-              type="button"
-              onClick={() => void loadTransactions()}
-            >
-              <Wallet size={20} />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                aria-label="거래 새로고침"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-app-line bg-white text-app-ink"
+                type="button"
+                onClick={() => void loadTransactions()}
+              >
+                <Wallet size={20} />
+              </button>
+              <button
+                className="flex h-10 items-center gap-1 rounded-full border border-app-line bg-white px-3 text-sm font-bold text-app-ink"
+                type="button"
+                onClick={handleLock}
+              >
+                <LockKeyhole size={16} />
+                잠금
+              </button>
+            </div>
           </div>
         </header>
 
