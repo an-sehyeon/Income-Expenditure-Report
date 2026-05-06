@@ -1610,9 +1610,9 @@ function SettingsView({ onLoadBackupData }: SettingsViewProps) {
 
       <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
         <h3 className="text-lg font-bold text-app-ink">앱 잠금 설정</h3>
-        <p className="mt-1 text-sm leading-6 text-app-muted">
+        {/* <p className="mt-1 text-sm leading-6 text-app-muted">
           비밀번호는 이 브라우저의 localStorage에 저장됩니다. 개인용 간단 잠금 기능이며 강력한 서버 인증은 아닙니다.
-        </p>
+        </p> */}
 
         <form className="mt-4 space-y-3" onSubmit={handlePasscodeSubmit}>
           {[
@@ -1656,7 +1656,7 @@ function SettingsView({ onLoadBackupData }: SettingsViewProps) {
       <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
         <h3 className="text-lg font-bold text-app-ink">데이터 백업</h3>
         <p className="mt-1 text-sm leading-6 text-app-muted">
-          현재 앱이 Supabase에서 페이지 단위로 가져온 전체 거래 데이터를 CSV 또는 JSON 파일로 저장합니다.
+          저장된 전체 거래 데이터를 CSV 또는 JSON 파일로 저장합니다.
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button
