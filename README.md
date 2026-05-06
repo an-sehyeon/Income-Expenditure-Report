@@ -467,48 +467,33 @@ git push
 3. 홈 화면에 추가 또는 앱 설치를 선택합니다.
 4. 이름을 확인하고 추가합니다.
 
+## 설정 메뉴
+
+하단 탭에는 `홈`, `입력`, `목록`, `통계`, `설정` 메뉴가 있습니다. `설정` 화면에서는 앱 잠금 비밀번호 수정, CSV/JSON 파일 백업 다운로드, 로컬 MySQL 자동 백업 안내를 확인할 수 있습니다.
+
 ## 비밀번호 잠금 기능
 
 앱에 접속하면 바로 수익지출관리 화면이 열리지 않고, 먼저 4자리 비밀번호 입력 화면이 표시됩니다. 이 기능은 회원가입이나 로그인 기능이 아니며, Supabase Auth도 사용하지 않습니다. 개인용 앱을 가볍게 잠그는 프론트엔드 잠금 기능입니다.
 
-- 초기 비밀번호: `6262`
+- 기본 비밀번호: `6262`
 - 입력 방식: 숫자 4자리
 - 인증 유지 기간: 7일
-- 인증 상태 저장 위치: 브라우저 `localStorage`
-- 저장 키 이름: `app-passcode-unlocked-until`
+- 인증 만료 시간 저장 key: `app-passcode-unlocked-until`
+- 변경한 비밀번호 저장 key: `app-passcode-value`
 
-비밀번호가 맞으면 브라우저에 인증 만료 시간이 저장됩니다. 만료 시간이 현재 시간보다 미래이면 새로고침하거나 앱을 다시 열어도 바로 앱 화면으로 들어갑니다. 7일이 지나면 다시 비밀번호 입력 화면이 표시됩니다.
+비밀번호가 맞으면 브라우저 `localStorage`에 인증 만료 시간이 저장됩니다. 만료 시간이 현재 시간보다 미래이면 새로고침하거나 앱을 다시 열어도 바로 앱 화면으로 들어갑니다. 7일이 지나면 다시 비밀번호 입력 화면이 표시됩니다.
 
-앱 화면 상단의 `잠금` 버튼을 누르면 저장된 인증 상태가 삭제되고 다시 비밀번호 입력 화면으로 돌아갑니다.
+앱 화면 상단의 `잠금` 버튼을 누르면 저장된 인증 만료 시간이 삭제되고 다시 비밀번호 입력 화면으로 돌아갑니다.
 
-### 비밀번호 변경 방법
+### 설정 화면에서 비밀번호 변경하기
 
-비밀번호는 [lib/passcode.ts](./lib/passcode.ts)의 `APP_PASSCODE` 상수에서 관리합니다.
+1. 하단 탭에서 `설정`을 누릅니다.
+2. `앱 잠금 설정` 섹션에서 현재 비밀번호를 입력합니다.
+3. 새 비밀번호 4자리를 입력합니다.
+4. 새 비밀번호 확인에 같은 값을 입력합니다.
+5. `비밀번호 변경` 버튼을 누릅니다.
 
-```ts
-export const APP_PASSCODE = "6262";
-```
-
-예를 들어 비밀번호를 `1234`로 바꾸려면 아래처럼 수정합니다.
-
-```ts
-export const APP_PASSCODE = "1234";
-```
-
-비밀번호는 반드시 숫자 4자리 문자열로 관리하세요. 4자리 숫자가 아니면 입력 화면의 제한 조건과 맞지 않습니다.
-
-비밀번호를 수정한 뒤에는 다시 배포해야 합니다.
-
-```bash
-npm run build
-git add .
-git commit -m "수정: 앱 잠금 비밀번호 변경"
-git push
-```
-
-그다음 Vercel 자동 재배포가 완료되었는지 확인하고, 배포 주소에서 새 비밀번호로 접속해 봅니다.
-
-비밀번호를 변경해도 기존 브라우저에 인증 상태가 남아 있으면 만료 전까지 바로 앱 화면이 열릴 수 있습니다. 이때는 앱 상단의 `잠금` 버튼을 누르거나, 브라우저 개발자 도구에서 `localStorage`의 `app-passcode-unlocked-until` 값을 삭제한 뒤 다시 접속하세요.
+변경된 비밀번호는 서버 DB가 아니라 현재 브라우저의 `localStorage`에 저장됩니다. 저장된 값이 없으면 기본 비밀번호 `6262`를 사용합니다. 비밀번호를 바꿨는데 기존 인증 상태가 남아 있으면 만료 전까지 앱 화면이 바로 열릴 수 있습니다. 이때는 앱 상단의 `잠금` 버튼을 눌러 다시 비밀번호를 확인하거나, 브라우저 개발자 도구에서 `app-passcode-unlocked-until` 값을 삭제하세요.
 
 ### 잠금 기능 보안 주의사항
 
@@ -518,7 +503,97 @@ git push
 
 실제 보안이 필요하면 Supabase Auth를 추가하고, 서버 검증 또는 `user_id` 기반 RLS 정책으로 본인 데이터만 접근할 수 있게 구조를 바꿔야 합니다.
 
-이번 비밀번호 잠금 기능 추가는 앱 코드 변경만 포함합니다. DB 구조 변경 없음, Supabase 추가 SQL 실행 불필요.
+## CSV/JSON 백업 다운로드
+
+설정 화면의 `데이터 백업` 섹션에서 현재 Supabase에서 가져온 전체 거래 데이터를 파일로 저장할 수 있습니다.
+
+- CSV 다운로드 파일명 예시: `transactions_backup_2026-05-01.csv`
+- JSON 다운로드 파일명 예시: `transactions_backup_2026-05-01.json`
+- CSV는 엑셀에서 한글이 깨지지 않도록 UTF-8 BOM을 포함합니다.
+- CSV 값에 쉼표, 줄바꿈, 따옴표가 있어도 깨지지 않도록 escaping을 처리합니다.
+- JSON은 전체 `transactions` 배열을 2칸 들여쓰기로 저장합니다.
+
+백업 데이터가 없으면 `백업할 데이터가 없습니다.` 안내가 표시됩니다.
+
+## 로컬 MySQL 자동 백업
+
+브라우저 앱은 로컬 MySQL에 직접 연결하지 않습니다. 브라우저에서 로컬 DB에 직접 연결하면 보안상 위험하고, 배포된 Vercel 앱에서도 사용자의 로컬 PC DB에 접근할 수 없습니다.
+
+대신 로컬 PC에서 Node.js 스크립트를 실행해 Supabase 운영 DB의 `transactions` 데이터를 로컬 MySQL 백업 DB로 복사합니다.
+
+- Supabase: 실제 앱이 사용하는 운영 DB
+- MySQL: 로컬 PC에 저장하는 백업 DB
+- 실행 방식: `npm run backup:mysql`
+- 자동화 방식: Windows 작업 스케줄러
+- 삭제 정책: Supabase에서 삭제된 데이터도 MySQL 백업 DB에서는 삭제하지 않습니다.
+
+### MySQL 백업 테이블 생성
+
+1. DBeaver를 실행합니다.
+2. 로컬 MySQL에 연결합니다.
+3. [scripts/create-backup-table.sql](./scripts/create-backup-table.sql) 파일을 엽니다.
+4. SQL을 실행합니다.
+5. `backup_transactions` 테이블이 생성되었는지 확인합니다.
+
+### `.env.backup` 만들기
+
+1. [.env.backup.example](./.env.backup.example) 파일을 복사합니다.
+2. 프로젝트 루트에 `.env.backup` 파일을 만듭니다.
+3. Supabase URL/key와 MySQL 접속 정보를 입력합니다.
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=
+MYSQL_USER=
+MYSQL_PASSWORD=
+```
+
+`.env.backup`에는 Supabase key와 MySQL 비밀번호가 들어가므로 GitHub에 올리면 안 됩니다. 이 프로젝트의 `.gitignore`에는 `.env.backup`이 포함되어 있습니다.
+
+### 수동 백업 실행
+
+```bash
+npm install
+npm run backup:mysql
+```
+
+실행이 끝나면 DBeaver에서 아래 SQL로 백업 결과를 확인합니다.
+
+```sql
+select count(*) from backup_transactions;
+select * from backup_transactions order by transaction_date desc, created_at desc, id desc limit 20;
+```
+
+백업 스크립트는 Supabase 데이터를 `transaction_date desc`, `created_at desc`, `id desc` 기준으로 페이지 단위 조회합니다. 같은 날짜 데이터가 많아도 range 페이지 경계에서 중복/누락이 생기지 않도록 안정적인 정렬 기준과 id 중복 제거를 함께 사용합니다.
+
+### Windows 작업 스케줄러로 매일 밤 10시 자동 백업
+
+1. Windows 검색에서 `작업 스케줄러`를 실행합니다.
+2. 오른쪽에서 `기본 작업 만들기`를 선택합니다.
+3. 이름을 `농산물 수익지출관리 MySQL 백업`처럼 입력합니다.
+4. 트리거는 `매일`을 선택합니다.
+5. 시작 시간은 `오후 10:00`으로 설정합니다.
+6. 작업은 `프로그램 시작`을 선택합니다.
+7. `프로그램/스크립트`에는 `npm.cmd`를 입력합니다.
+   - PowerShell 실행 정책 문제가 있으면 `where npm.cmd`로 전체 경로를 확인해 넣어도 됩니다.
+8. `인수 추가`에는 `run backup:mysql`을 입력합니다.
+9. `시작 위치`에는 프로젝트 폴더 경로를 입력합니다.
+   - 예: `C:\Users\MASTER\Documents\New project`
+10. 저장 후 작업을 마우스 오른쪽 버튼으로 눌러 `실행`해 테스트합니다.
+
+자동 백업 주의사항:
+
+- PC가 꺼져 있으면 실행되지 않습니다.
+- MySQL 서버가 실행 중이어야 합니다.
+- 인터넷 연결이 필요합니다.
+- Supabase key와 MySQL 비밀번호가 들어간 `.env.backup` 파일 관리에 주의하세요.
+- 이 백업은 실시간 동기화가 아니라 예약 백업입니다.
+- Supabase에서 삭제된 거래는 MySQL 백업 DB에서 자동 삭제하지 않습니다.
+
+이번 설정/백업 기능 추가는 Supabase 앱 DB 구조를 바꾸지 않습니다. DB 구조 변경 없음, Supabase 추가 SQL 실행 불필요. 단, 로컬 MySQL 백업을 사용하려면 `backup_transactions` 테이블은 로컬 MySQL에 생성해야 합니다.
 
 ## 개인용 사용 시 보안 주의사항
 

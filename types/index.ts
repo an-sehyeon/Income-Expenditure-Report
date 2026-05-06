@@ -68,6 +68,6 @@ export interface TransactionFormData {
   memo: string;
 }
 
-export type ViewTab = "home" | "form" | "list" | "stats";
+export type ViewTab = "home" | "form" | "list" | "stats" | "settings";
 export type TypeFilter = "all" | TransactionType;
 export type PeriodFilter = "month" | "year" | "all";

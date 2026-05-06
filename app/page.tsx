@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   Save,
+  Settings as SettingsIcon,
   Trash2,
   Wallet
 } from "lucide-react";
@@ -28,7 +29,14 @@ import {
   YAxis
 } from "recharts";
 import { PasscodeLock } from "@/components/PasscodeLock";
-import { PASSCODE_STORAGE_KEY, PASSCODE_UNLOCK_DURATION_MS } from "@/lib/passcode";
+import {
+  isAppPasscode,
+  isValidPasscodeFormat,
+  normalizePasscodeInput,
+  PASSCODE_STORAGE_KEY,
+  PASSCODE_UNLOCK_DURATION_MS,
+  saveCurrentPasscode
+} from "@/lib/passcode";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import {
   formatAmount,
@@ -90,6 +98,56 @@ interface TransactionCounts {
   total: number;
   income: number;
   expense: number;
+}
+
+type BackupFormat = "csv" | "json";
+
+const backupColumns = [
+  "id",
+  "type",
+  "amount",
+  "category",
+  "transaction_date",
+  "memo",
+  "item_name",
+  "box_count",
+  "auction_price",
+  "created_at",
+  "updated_at"
+] as const;
+
+type BackupColumn = (typeof backupColumns)[number];
+
+function getBackupDateStamp(): string {
+  return todayDateInputValue();
+}
+
+function escapeCsvValue(value: Transaction[BackupColumn]): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  const escaped = text.replace(/"/g, '""');
+
+  return /[",\r\n]/.test(escaped) ? `"${escaped}"` : escaped;
+}
+
+function createCsvContent(items: Transaction[]): string {
+  const header = backupColumns.join(",");
+  const rows = items.map((item) => backupColumns.map((column) => escapeCsvValue(item[column])).join(","));
+
+  // 엑셀에서 한글이 깨지지 않도록 UTF-8 BOM을 앞에 붙입니다.
+  return `\uFEFF${[header, ...rows].join("\r\n")}`;
+}
+
+function downloadTextFile(content: string, filename: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 function calculateSummary(items: Transaction[]): Totals {
@@ -264,11 +322,11 @@ export default function Page() {
     setAuthChecked(true);
   }, []);
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(async (): Promise<Transaction[] | null> => {
     if (!isSupabaseConfigured || !supabase) {
       setErrorMessage(".env.local에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 설정해주세요.");
       setLoading(false);
-      return;
+      return null;
     }
 
     setLoading(true);
@@ -289,7 +347,7 @@ export default function Page() {
       if (error) {
         setErrorMessage(error.message);
         setLoading(false);
-        return;
+        return null;
       }
 
       const page = data ?? [];
@@ -326,6 +384,7 @@ export default function Page() {
 
     setTransactions(dedupedTransactions);
     setLoading(false);
+    return dedupedTransactions;
   }, []);
 
   useEffect(() => {
@@ -647,6 +706,10 @@ export default function Page() {
               onSelectedMonthChange={handleSelectedMonthChange}
               onSelectedYearChange={handleSelectedYearChange}
             />
+          ) : null}
+
+          {activeTab === "settings" ? (
+            <SettingsView onLoadBackupData={loadTransactions} />
           ) : null}
         </section>
 
@@ -1445,6 +1508,196 @@ function EditModal({ form, itemId, updating, onChange, onClose, onDelete, onSubm
   );
 }
 
+interface SettingsViewProps {
+  onLoadBackupData: () => Promise<Transaction[] | null>;
+}
+
+function SettingsView({ onLoadBackupData }: SettingsViewProps) {
+  const [currentPasscode, setCurrentPasscode] = useState("");
+  const [newPasscode, setNewPasscode] = useState("");
+  const [newPasscodeConfirm, setNewPasscodeConfirm] = useState("");
+  const [passcodeMessage, setPasscodeMessage] = useState("");
+  const [passcodeMessageType, setPasscodeMessageType] = useState<"success" | "error">("success");
+  const [backupMessage, setBackupMessage] = useState("");
+  const [backupMessageType, setBackupMessageType] = useState<"success" | "error">("success");
+  const [backupFormat, setBackupFormat] = useState<BackupFormat | null>(null);
+
+  function updatePasscodeMessage(message: string, type: "success" | "error") {
+    setPasscodeMessage(message);
+    setPasscodeMessageType(type);
+  }
+
+  function handlePasscodeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!isAppPasscode(currentPasscode)) {
+      updatePasscodeMessage("현재 비밀번호가 일치하지 않습니다.", "error");
+      return;
+    }
+
+    if (!isValidPasscodeFormat(newPasscode)) {
+      updatePasscodeMessage("새 비밀번호는 숫자 4자리여야 합니다.", "error");
+      return;
+    }
+
+    if (newPasscode !== newPasscodeConfirm) {
+      updatePasscodeMessage("새 비밀번호가 일치하지 않습니다.", "error");
+      return;
+    }
+
+    saveCurrentPasscode(newPasscode);
+    setCurrentPasscode("");
+    setNewPasscode("");
+    setNewPasscodeConfirm("");
+    updatePasscodeMessage("비밀번호가 변경되었습니다.", "success");
+  }
+
+  async function handleDownload(format: BackupFormat) {
+    setBackupFormat(format);
+    setBackupMessage("백업 생성 중...");
+    setBackupMessageType("success");
+
+    try {
+      const backupItems = await onLoadBackupData();
+
+      if (!backupItems) {
+        setBackupMessage("백업 데이터를 불러오지 못했습니다.");
+        setBackupMessageType("error");
+        return;
+      }
+
+      if (backupItems.length === 0) {
+        setBackupMessage("백업할 데이터가 없습니다.");
+        setBackupMessageType("error");
+        return;
+      }
+
+      const dateStamp = getBackupDateStamp();
+
+      if (format === "csv") {
+        downloadTextFile(
+          createCsvContent(backupItems),
+          `transactions_backup_${dateStamp}.csv`,
+          "text/csv;charset=utf-8"
+        );
+      } else {
+        downloadTextFile(
+          JSON.stringify(backupItems, null, 2),
+          `transactions_backup_${dateStamp}.json`,
+          "application/json;charset=utf-8"
+        );
+      }
+
+      setBackupMessage(`${format.toUpperCase()} 백업 파일을 생성했습니다.`);
+      setBackupMessageType("success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "알 수 없는 오류";
+      setBackupMessage(`백업 생성에 실패했습니다. ${message}`);
+      setBackupMessageType("error");
+    } finally {
+      setBackupFormat(null);
+    }
+  }
+
+  const backupBusy = backupFormat !== null;
+
+  return (
+    <div className="space-y-5">
+      <section>
+        <p className="text-sm font-semibold text-app-muted">설정</p>
+        <h2 className="mt-1 text-2xl font-bold text-app-ink">앱 설정과 데이터 백업</h2>
+      </section>
+
+      <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
+        <h3 className="text-lg font-bold text-app-ink">앱 잠금 설정</h3>
+        <p className="mt-1 text-sm leading-6 text-app-muted">
+          비밀번호는 이 브라우저의 localStorage에 저장됩니다. 개인용 간단 잠금 기능이며 강력한 서버 인증은 아닙니다.
+        </p>
+
+        <form className="mt-4 space-y-3" onSubmit={handlePasscodeSubmit}>
+          {[
+            { label: "현재 비밀번호", value: currentPasscode, setter: setCurrentPasscode },
+            { label: "새 비밀번호", value: newPasscode, setter: setNewPasscode },
+            { label: "새 비밀번호 확인", value: newPasscodeConfirm, setter: setNewPasscodeConfirm }
+          ].map((field) => (
+            <label className="block" key={field.label}>
+              <span className="text-sm font-semibold text-app-muted">{field.label}</span>
+              <input
+                className="mt-2 w-full rounded-md border border-app-line bg-app-background px-4 py-3 text-center text-xl font-bold text-app-ink outline-none focus:border-app-accent"
+                inputMode="numeric"
+                maxLength={4}
+                pattern="[0-9]*"
+                type="password"
+                value={field.value}
+                onChange={(event) => {
+                  setPasscodeMessage("");
+                  field.setter(normalizePasscodeInput(event.target.value));
+                }}
+              />
+            </label>
+          ))}
+
+          {passcodeMessage ? (
+            <p
+              className={`text-sm font-semibold ${
+                passcodeMessageType === "success" ? "text-app-income" : "text-app-expense"
+              }`}
+            >
+              {passcodeMessage}
+            </p>
+          ) : null}
+
+          <button className="w-full rounded-md bg-app-ink px-4 py-3 font-bold text-white" type="submit">
+            비밀번호 변경
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
+        <h3 className="text-lg font-bold text-app-ink">데이터 백업</h3>
+        <p className="mt-1 text-sm leading-6 text-app-muted">
+          현재 앱이 Supabase에서 페이지 단위로 가져온 전체 거래 데이터를 CSV 또는 JSON 파일로 저장합니다.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button
+            className="rounded-md border border-app-line bg-white px-3 py-3 text-sm font-bold text-app-ink disabled:opacity-50"
+            disabled={backupBusy}
+            type="button"
+            onClick={() => void handleDownload("csv")}
+          >
+            {backupFormat === "csv" ? "백업 생성 중..." : "CSV 다운로드"}
+          </button>
+          <button
+            className="rounded-md border border-app-line bg-white px-3 py-3 text-sm font-bold text-app-ink disabled:opacity-50"
+            disabled={backupBusy}
+            type="button"
+            onClick={() => void handleDownload("json")}
+          >
+            {backupFormat === "json" ? "백업 생성 중..." : "JSON 다운로드"}
+          </button>
+        </div>
+        {backupMessage ? (
+          <p
+            className={`mt-3 text-sm font-semibold ${
+              backupMessageType === "success" ? "text-app-income" : "text-app-expense"
+            }`}
+          >
+            {backupMessage}
+          </p>
+        ) : null}
+      </section>
+
+      {/* <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
+        <h3 className="text-lg font-bold text-app-ink">로컬 MySQL 자동 백업</h3>
+        <p className="mt-1 text-sm leading-6 text-app-muted">
+          웹앱은 브라우저에서 MySQL에 직접 연결하지 않습니다. 로컬 PC에서는 npm run backup:mysql 스크립트와
+          Windows 작업 스케줄러로 Supabase 데이터를 MySQL 백업 테이블에 복사할 수 있습니다.
+        </p>
+      </section> */}
+    </div>
+  );
+}
+
 interface BottomNavigationProps {
   activeTab: ViewTab;
   onChange: (tab: ViewTab) => void;
@@ -1455,12 +1708,13 @@ function BottomNavigation({ activeTab, onChange }: BottomNavigationProps) {
     { label: "홈", value: "home", icon: Home },
     { label: "입력", value: "form", icon: Plus },
     { label: "목록", value: "list", icon: List },
-    { label: "통계", value: "stats", icon: CalendarDays }
+    { label: "통계", value: "stats", icon: CalendarDays },
+    { label: "설정", value: "settings", icon: SettingsIcon }
   ] as const;
 
   return (
     <nav className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 border-t border-app-line bg-white px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2">
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-5 gap-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const selected = activeTab === tab.value;

@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { LockKeyhole } from "lucide-react";
-import { isAppPasscode } from "@/lib/passcode";
+import { isAppPasscode, normalizePasscodeInput } from "@/lib/passcode";
 
 interface PasscodeLockProps {
   onUnlock: () => void;
@@ -32,7 +32,7 @@ export function PasscodeLock({ onUnlock }: PasscodeLockProps) {
           <LockKeyhole size={26} />
         </div>
         <div className="mt-5 text-center">
-          <h1 className="text-xl font-bold text-app-ink">기선이네 수익지출관리</h1>
+          <h1 className="text-xl font-bold text-app-ink">기선이네 비밀장부</h1>
           <p className="mt-2 text-sm text-app-muted">앱을 사용하려면 4자리 비밀번호를 입력해주세요.</p>
         </div>
 
@@ -48,7 +48,7 @@ export function PasscodeLock({ onUnlock }: PasscodeLockProps) {
             value={passcode}
             onChange={(event) => {
               setErrorMessage("");
-              setPasscode(event.target.value.replace(/\D/g, "").slice(0, 4));
+              setPasscode(normalizePasscodeInput(event.target.value));
             }}
           />
           {errorMessage ? <p className="text-center text-sm font-semibold text-app-expense">{errorMessage}</p> : null}
