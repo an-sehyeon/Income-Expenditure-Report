@@ -477,13 +477,82 @@ git push
 
 - 기본 비밀번호: `6262`
 - 입력 방식: 숫자 4자리
-- 인증 유지 기간: 7일
+- 인증 유지 기간: 3시간
+- 비밀번호 저장 위치: Supabase `public.app_settings`
 - 인증 만료 시간 저장 key: `app-passcode-unlocked-until`
-- 변경한 비밀번호 저장 key: `app-passcode-value`
 
-비밀번호가 맞으면 브라우저 `localStorage`에 인증 만료 시간이 저장됩니다. 만료 시간이 현재 시간보다 미래이면 새로고침하거나 앱을 다시 열어도 바로 앱 화면으로 들어갑니다. 7일이 지나면 다시 비밀번호 입력 화면이 표시됩니다.
+예전 방식은 변경한 비밀번호를 브라우저 `localStorage`에 저장했습니다. 이 방식은 브라우저마다 비밀번호가 따로 저장되어, PC에서 바꾼 비밀번호가 핸드폰에는 적용되지 않고 다른 기기에서는 기본 비밀번호 `6262`가 계속 사용될 수 있었습니다.
 
-앱 화면 상단의 `잠금` 버튼을 누르면 저장된 인증 만료 시간이 삭제되고 다시 비밀번호 입력 화면으로 돌아갑니다.
+현재 방식은 비밀번호를 Supabase DB의 `app_settings` 테이블에서 공통으로 관리합니다. 앱은 `key = 'app_passcode'` 행의 `passcode` 값과 사용자가 입력한 4자리 비밀번호를 비교합니다. 설정 화면에서 비밀번호를 변경하면 Supabase DB에 반영되므로 다른 브라우저와 핸드폰에서도 새 비밀번호가 적용됩니다.
+
+비밀번호가 맞으면 브라우저 `localStorage`에는 비밀번호 값이 아니라 인증 만료 시간만 저장됩니다. 만료 시간이 현재 시간보다 미래이면 새로고침하거나 앱을 다시 열어도 바로 앱 화면으로 들어갑니다. 3시간이 지나면 다시 비밀번호 입력 화면이 표시됩니다.
+
+앱 화면 상단의 `로그아웃` 버튼을 누르면 현재 브라우저에 저장된 인증 만료 시간이 삭제되고 다시 비밀번호 입력 화면으로 돌아갑니다. 서버 계정을 로그아웃하는 기능은 아니며, 이 브라우저의 인증 상태를 해제하는 버튼입니다.
+
+비밀번호를 DB에서 바꿔도 이미 인증된 다른 브라우저나 다른 기기는 인증 만료 전까지 최대 3시간 동안 앱 화면에 접근할 수 있습니다. 즉시 다시 비밀번호를 입력하게 만들고 싶으면 해당 기기에서 `로그아웃` 버튼을 누르거나 브라우저 `localStorage`의 `app-passcode-unlocked-until` 값을 삭제하세요.
+
+### Supabase 비밀번호 테이블 migration
+
+기존 프로젝트에 적용할 때는 Supabase Dashboard에서 SQL Editor를 열고 [supabase/migration_add_app_passcode_settings.sql](./supabase/migration_add_app_passcode_settings.sql)을 실행합니다.
+
+```sql
+create table if not exists public.app_settings (
+  key text primary key,
+  passcode text not null check (passcode ~ '^[0-9]{4}$'),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.app_settings (key, passcode)
+values ('app_passcode', '6262')
+on conflict (key) do nothing;
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists set_app_settings_updated_at on public.app_settings;
+
+create trigger set_app_settings_updated_at
+before update on public.app_settings
+for each row
+execute function public.set_updated_at();
+
+alter table public.app_settings enable row level security;
+
+drop policy if exists "Personal demo anon select app passcode" on public.app_settings;
+drop policy if exists "Personal demo anon update app passcode" on public.app_settings;
+
+create policy "Personal demo anon select app passcode"
+on public.app_settings
+for select
+to anon
+using (key = 'app_passcode');
+
+create policy "Personal demo anon update app passcode"
+on public.app_settings
+for update
+to anon
+using (key = 'app_passcode')
+with check (key = 'app_passcode' and passcode ~ '^[0-9]{4}$');
+
+grant select, update on public.app_settings to anon;
+```
+
+적용 순서:
+
+1. Supabase Dashboard에 접속합니다.
+2. SQL Editor를 엽니다.
+3. 위 migration SQL을 실행합니다.
+4. 앱을 다시 배포합니다.
+5. 기본 비밀번호 `6262`로 접속합니다.
+6. 설정 탭에서 새 비밀번호로 변경합니다.
+7. 다른 브라우저나 핸드폰에서 새 비밀번호로 접속되는지 확인합니다.
 
 ### 설정 화면에서 비밀번호 변경하기
 
@@ -493,13 +562,24 @@ git push
 4. 새 비밀번호 확인에 같은 값을 입력합니다.
 5. `비밀번호 변경` 버튼을 누릅니다.
 
-변경된 비밀번호는 서버 DB가 아니라 현재 브라우저의 `localStorage`에 저장됩니다. 저장된 값이 없으면 기본 비밀번호 `6262`를 사용합니다. 비밀번호를 바꿨는데 기존 인증 상태가 남아 있으면 만료 전까지 앱 화면이 바로 열릴 수 있습니다. 이때는 앱 상단의 `잠금` 버튼을 눌러 다시 비밀번호를 확인하거나, 브라우저 개발자 도구에서 `app-passcode-unlocked-until` 값을 삭제하세요.
+현재 비밀번호는 Supabase DB의 `app_settings.passcode` 값과 비교합니다. 새 비밀번호는 숫자 4자리여야 하며, 변경에 성공하면 DB 값이 바뀌고 입력값은 초기화됩니다. 변경 성공 후 현재 브라우저의 인증 상태는 즉시 삭제되며, `비밀번호가 변경되었습니다. 새 비밀번호로 다시 로그인해주세요.` 안내가 표시된 뒤 비밀번호 입력 화면으로 돌아갑니다. 이후에는 새 비밀번호를 입력해야 앱에 다시 들어갈 수 있습니다.
+
+### 비밀번호를 잊어버렸을 때 초기화
+
+Supabase SQL Editor에서 아래 SQL을 실행하면 비밀번호를 다시 `6262`로 초기화할 수 있습니다.
+
+```sql
+update public.app_settings
+set passcode = '6262',
+    updated_at = now()
+where key = 'app_passcode';
+```
 
 ### 잠금 기능 보안 주의사항
 
-이 잠금 기능은 진짜 서버 인증이 아닙니다. 비밀번호와 인증 상태가 브라우저 쪽 코드와 `localStorage`에 의존하므로, 개발자 도구를 아는 사람은 우회할 수 있습니다.
+이 잠금 기능은 진짜 회원 인증이 아니라 개인용 공통 비밀번호 잠금 기능입니다. 이번 요구사항에서는 비밀번호를 해시하지 않고 Supabase DB에 평문 4자리 문자열로 저장합니다.
 
-따라서 이 방식은 가족이나 지인에게 주소가 알려진 상황에서 가볍게 막는 용도입니다. 금융 정보나 민감 정보를 보호하는 강력한 보안 기능으로 보면 안 됩니다.
+`app_settings` 테이블은 로그인 없이 프론트엔드에서 읽고 수정해야 하므로 `anon` role에 select/update 정책이 필요합니다. 따라서 개발자 도구나 Supabase API 사용 방법을 아는 사람은 우회할 가능성이 있습니다. 또한 `transactions` 테이블도 개인용 anon CRUD 정책으로 열려 있다면 UI 잠금만으로 완전한 보안이 되지 않습니다.
 
 실제 보안이 필요하면 Supabase Auth를 추가하고, 서버 검증 또는 `user_id` 기반 RLS 정책으로 본인 데이터만 접근할 수 있게 구조를 바꿔야 합니다.
 
@@ -593,7 +673,7 @@ select * from backup_transactions order by transaction_date desc, created_at des
 - 이 백업은 실시간 동기화가 아니라 예약 백업입니다.
 - Supabase에서 삭제된 거래는 MySQL 백업 DB에서 자동 삭제하지 않습니다.
 
-이번 설정/백업 기능 추가는 Supabase 앱 DB 구조를 바꾸지 않습니다. DB 구조 변경 없음, Supabase 추가 SQL 실행 불필요. 단, 로컬 MySQL 백업을 사용하려면 `backup_transactions` 테이블은 로컬 MySQL에 생성해야 합니다.
+설정/백업 기능 중 CSV/JSON 다운로드와 MySQL 백업은 Supabase `transactions` 구조를 바꾸지 않습니다. 다만 공통 비밀번호 관리를 위해 Supabase에 `app_settings` 테이블을 추가해야 합니다. 로컬 MySQL 백업을 사용하려면 `backup_transactions` 테이블도 로컬 MySQL에 생성해야 합니다.
 
 ## 개인용 사용 시 보안 주의사항
 

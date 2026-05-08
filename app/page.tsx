@@ -30,12 +30,12 @@ import {
 } from "recharts";
 import { PasscodeLock } from "@/components/PasscodeLock";
 import {
-  isAppPasscode,
+  fetchAppPasscode,
   isValidPasscodeFormat,
   normalizePasscodeInput,
   PASSCODE_STORAGE_KEY,
   PASSCODE_UNLOCK_DURATION_MS,
-  saveCurrentPasscode
+  updateAppPasscode
 } from "@/lib/passcode";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import {
@@ -64,7 +64,7 @@ const expenseCategories = ["식비", "교통", "주거", "통신", "의료", "�
 const chartColors = ["#108a5a", "#c24136", "#2563eb", "#f59e0b", "#7c3aed", "#0891b2", "#db2777", "#65a30d"];
 const PAGE_SIZE = 1000;
 
-const emptyForm = (type: TransactionType = "expense"): TransactionFormData => ({
+const emptyForm = (type: TransactionType = "income"): TransactionFormData => ({
   type,
   amount: "",
   category: "",
@@ -405,6 +405,11 @@ export default function Page() {
     setIsUnlocked(false);
   }
 
+  function handleRequireReauth() {
+    window.localStorage.removeItem(PASSCODE_STORAGE_KEY);
+    window.setTimeout(() => setIsUnlocked(false), 900);
+  }
+
   const years = useMemo(() => {
     return getAvailableYears(transactions);
   }, [transactions]);
@@ -622,15 +627,8 @@ export default function Page() {
         <header className="sticky top-0 z-10 border-b border-app-line bg-white/95 px-5 py-4 backdrop-blur">
           <div className="flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <Image
-                alt="62팜 사진"
-                className="h-12 w-12 shrink-0 rounded-full border border-app-line object-cover"
-                height={48}
-                src="/images/62farm.jpg"
-                width={48}
-              />
               <div className="min-w-0">
-                <h1 className="truncate text-xl font-bold tracking-normal text-app-ink">62팜 수익지출관리</h1>
+                <h1 className="truncate text-xl font-bold tracking-normal text-app-ink">수익지출관리</h1>
                 <p className="mt-1 text-sm text-app-muted">매출과 지출 관리</p>
               </div>
             </div>
@@ -649,7 +647,7 @@ export default function Page() {
                 onClick={handleLock}
               >
                 <LockKeyhole size={16} />
-                잠금
+                로그아웃
               </button>
             </div>
           </div>
@@ -709,7 +707,7 @@ export default function Page() {
           ) : null}
 
           {activeTab === "settings" ? (
-            <SettingsView onLoadBackupData={loadTransactions} />
+            <SettingsView onRequireReauth={handleRequireReauth} onLoadBackupData={loadTransactions} />
           ) : null}
         </section>
 
@@ -1509,10 +1507,11 @@ function EditModal({ form, itemId, updating, onChange, onClose, onDelete, onSubm
 }
 
 interface SettingsViewProps {
+  onRequireReauth: () => void;
   onLoadBackupData: () => Promise<Transaction[] | null>;
 }
 
-function SettingsView({ onLoadBackupData }: SettingsViewProps) {
+function SettingsView({ onRequireReauth, onLoadBackupData }: SettingsViewProps) {
   const [currentPasscode, setCurrentPasscode] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
   const [newPasscodeConfirm, setNewPasscodeConfirm] = useState("");
@@ -1521,19 +1520,15 @@ function SettingsView({ onLoadBackupData }: SettingsViewProps) {
   const [backupMessage, setBackupMessage] = useState("");
   const [backupMessageType, setBackupMessageType] = useState<"success" | "error">("success");
   const [backupFormat, setBackupFormat] = useState<BackupFormat | null>(null);
+  const [passcodeUpdating, setPasscodeUpdating] = useState(false);
 
   function updatePasscodeMessage(message: string, type: "success" | "error") {
     setPasscodeMessage(message);
     setPasscodeMessageType(type);
   }
 
-  function handlePasscodeSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handlePasscodeSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (!isAppPasscode(currentPasscode)) {
-      updatePasscodeMessage("현재 비밀번호가 일치하지 않습니다.", "error");
-      return;
-    }
 
     if (!isValidPasscodeFormat(newPasscode)) {
       updatePasscodeMessage("새 비밀번호는 숫자 4자리여야 합니다.", "error");
@@ -1545,11 +1540,152 @@ function SettingsView({ onLoadBackupData }: SettingsViewProps) {
       return;
     }
 
-    saveCurrentPasscode(newPasscode);
-    setCurrentPasscode("");
-    setNewPasscode("");
-    setNewPasscodeConfirm("");
-    updatePasscodeMessage("비밀번호가 변경되었습니다.", "success");
+    setPasscodeUpdating(true);
+
+    try {
+      const storedPasscode = await fetchAppPasscode();
+
+      if (currentPasscode !== storedPasscode) {
+        updatePasscodeMessage("현재 비밀번호가 일치하지 않습니다.", "error");
+        return;
+      }
+
+      await updateAppPasscode(newPasscode);
+      setCurrentPasscode("");
+      setNewPasscode("");
+      setNewPasscodeConfirm("");
+      updatePasscodeMessage("비밀번호가 변경되었습니다. 새 비밀번호로 다시 로그인해주세요.", "success");
+      onRequireReauth();
+    } catch {
+      updatePasscodeMessage("비밀번호 변경 중 오류가 발생했습니다.", "error");
+    } finally {
+      setPasscodeUpdating(false);
+    }
+  }
+
+  function handlePasscodeSubmitWrapper(event: FormEvent<HTMLFormElement>) {
+    void handlePasscodeSubmit(event);
+  }
+
+  function handlePasscodeInputChange(value: string, setter: (value: string) => void) {
+    setPasscodeMessage("");
+    setter(normalizePasscodeInput(value));
+  }
+
+  function getPasscodeButtonLabel(): string {
+    if (passcodeUpdating) {
+      return "변경 중...";
+    }
+
+    return "비밀번호 변경";
+  }
+
+  function isPasscodeSubmitDisabled(): boolean {
+    return passcodeUpdating;
+  }
+
+  function getPasscodeMessageClassName(): string {
+    return passcodeMessageType === "success" ? "text-app-income" : "text-app-expense";
+  }
+
+  function getBackupMessageClassName(): string {
+    return backupMessageType === "success" ? "text-app-income" : "text-app-expense";
+  }
+
+  function getBackupHelpText(): string {
+    return "전체 거래 데이터를 CSV 또는 JSON 파일로 저장합니다.";
+  }
+
+
+  function getPasscodeFields() {
+    return [
+      { label: "현재 비밀번호", value: currentPasscode, setter: setCurrentPasscode },
+      { label: "새 비밀번호", value: newPasscode, setter: setNewPasscode },
+      { label: "새 비밀번호 확인", value: newPasscodeConfirm, setter: setNewPasscodeConfirm }
+    ];
+  }
+
+  function renderPasscodeMessage() {
+    if (!passcodeMessage) {
+      return null;
+    }
+
+    return <p className={`text-sm font-semibold ${getPasscodeMessageClassName()}`}>{passcodeMessage}</p>;
+  }
+
+  function renderBackupMessage() {
+    if (!backupMessage) {
+      return null;
+    }
+
+    return <p className={`mt-3 text-sm font-semibold ${getBackupMessageClassName()}`}>{backupMessage}</p>;
+  }
+
+  function renderPasscodeFields() {
+    return getPasscodeFields().map((field) => (
+      <label className="block" key={field.label}>
+        <span className="text-sm font-semibold text-app-muted">{field.label}</span>
+        <input
+          className="mt-2 w-full rounded-md border border-app-line bg-app-background px-4 py-3 text-center text-xl font-bold text-app-ink outline-none focus:border-app-accent"
+          inputMode="numeric"
+          maxLength={4}
+          pattern="[0-9]*"
+          type="password"
+          value={field.value}
+          onChange={(event) => handlePasscodeInputChange(event.target.value, field.setter)}
+        />
+      </label>
+    ));
+  }
+
+  function renderPasscodeSection() {
+    return (
+      <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
+        <h3 className="text-lg font-bold text-app-ink">앱 잠금 설정</h3>
+        
+        <form className="mt-4 space-y-3" onSubmit={handlePasscodeSubmitWrapper}>
+          {renderPasscodeFields()}
+          {renderPasscodeMessage()}
+          <button
+            className="w-full rounded-md bg-app-ink px-4 py-3 font-bold text-white disabled:opacity-50"
+            disabled={isPasscodeSubmitDisabled()}
+            type="submit"
+          >
+            {getPasscodeButtonLabel()}
+          </button>
+        </form>
+      </section>
+    );
+  }
+
+  function renderBackupSection() {
+    const backupBusy = backupFormat !== null;
+
+    return (
+      <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
+        <h3 className="text-lg font-bold text-app-ink">데이터 백업</h3>
+        <p className="mt-1 text-sm leading-6 text-app-muted">{getBackupHelpText()}</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button
+            className="rounded-md border border-app-line bg-white px-3 py-3 text-sm font-bold text-app-ink disabled:opacity-50"
+            disabled={backupBusy}
+            type="button"
+            onClick={() => void handleDownload("csv")}
+          >
+            {backupFormat === "csv" ? "백업 생성 중..." : "CSV 다운로드"}
+          </button>
+          <button
+            className="rounded-md border border-app-line bg-white px-3 py-3 text-sm font-bold text-app-ink disabled:opacity-50"
+            disabled={backupBusy}
+            type="button"
+            onClick={() => void handleDownload("json")}
+          >
+            {backupFormat === "json" ? "백업 생성 중..." : "JSON 다운로드"}
+          </button>
+        </div>
+        {renderBackupMessage()}
+      </section>
+    );
   }
 
   async function handleDownload(format: BackupFormat) {
@@ -1599,101 +1735,15 @@ function SettingsView({ onLoadBackupData }: SettingsViewProps) {
     }
   }
 
-  const backupBusy = backupFormat !== null;
-
   return (
     <div className="space-y-5">
       <section>
         <p className="text-sm font-semibold text-app-muted">설정</p>
-        <h2 className="mt-1 text-2xl font-bold text-app-ink">앱 설정과 데이터 백업</h2>
+        <h2 className="mt-1 text-2xl font-bold text-app-ink">비밀번호 설정과 데이터 백업</h2>
       </section>
 
-      <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
-        <h3 className="text-lg font-bold text-app-ink">앱 잠금 설정</h3>
-        {/* <p className="mt-1 text-sm leading-6 text-app-muted">
-          비밀번호는 이 브라우저의 localStorage에 저장됩니다. 개인용 간단 잠금 기능이며 강력한 서버 인증은 아닙니다.
-        </p> */}
-
-        <form className="mt-4 space-y-3" onSubmit={handlePasscodeSubmit}>
-          {[
-            { label: "현재 비밀번호", value: currentPasscode, setter: setCurrentPasscode },
-            { label: "새 비밀번호", value: newPasscode, setter: setNewPasscode },
-            { label: "새 비밀번호 확인", value: newPasscodeConfirm, setter: setNewPasscodeConfirm }
-          ].map((field) => (
-            <label className="block" key={field.label}>
-              <span className="text-sm font-semibold text-app-muted">{field.label}</span>
-              <input
-                className="mt-2 w-full rounded-md border border-app-line bg-app-background px-4 py-3 text-center text-xl font-bold text-app-ink outline-none focus:border-app-accent"
-                inputMode="numeric"
-                maxLength={4}
-                pattern="[0-9]*"
-                type="password"
-                value={field.value}
-                onChange={(event) => {
-                  setPasscodeMessage("");
-                  field.setter(normalizePasscodeInput(event.target.value));
-                }}
-              />
-            </label>
-          ))}
-
-          {passcodeMessage ? (
-            <p
-              className={`text-sm font-semibold ${
-                passcodeMessageType === "success" ? "text-app-income" : "text-app-expense"
-              }`}
-            >
-              {passcodeMessage}
-            </p>
-          ) : null}
-
-          <button className="w-full rounded-md bg-app-ink px-4 py-3 font-bold text-white" type="submit">
-            비밀번호 변경
-          </button>
-        </form>
-      </section>
-
-      <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
-        <h3 className="text-lg font-bold text-app-ink">데이터 백업</h3>
-        <p className="mt-1 text-sm leading-6 text-app-muted">
-          저장된 전체 거래 데이터를 CSV 또는 JSON 파일로 저장합니다.
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <button
-            className="rounded-md border border-app-line bg-white px-3 py-3 text-sm font-bold text-app-ink disabled:opacity-50"
-            disabled={backupBusy}
-            type="button"
-            onClick={() => void handleDownload("csv")}
-          >
-            {backupFormat === "csv" ? "백업 생성 중..." : "CSV 다운로드"}
-          </button>
-          <button
-            className="rounded-md border border-app-line bg-white px-3 py-3 text-sm font-bold text-app-ink disabled:opacity-50"
-            disabled={backupBusy}
-            type="button"
-            onClick={() => void handleDownload("json")}
-          >
-            {backupFormat === "json" ? "백업 생성 중..." : "JSON 다운로드"}
-          </button>
-        </div>
-        {backupMessage ? (
-          <p
-            className={`mt-3 text-sm font-semibold ${
-              backupMessageType === "success" ? "text-app-income" : "text-app-expense"
-            }`}
-          >
-            {backupMessage}
-          </p>
-        ) : null}
-      </section>
-
-      {/* <section className="rounded-lg border border-app-line bg-white p-4 shadow-soft">
-        <h3 className="text-lg font-bold text-app-ink">로컬 MySQL 자동 백업</h3>
-        <p className="mt-1 text-sm leading-6 text-app-muted">
-          웹앱은 브라우저에서 MySQL에 직접 연결하지 않습니다. 로컬 PC에서는 npm run backup:mysql 스크립트와
-          Windows 작업 스케줄러로 Supabase 데이터를 MySQL 백업 테이블에 복사할 수 있습니다.
-        </p>
-      </section> */}
+      {renderPasscodeSection()}
+      {renderBackupSection()}
     </div>
   );
 }

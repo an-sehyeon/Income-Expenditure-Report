@@ -45,6 +45,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      app_settings: {
+        Row: Record<string, unknown> & {
+          key: string;
+          passcode: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown> & {
+          key: string;
+          passcode: string;
+          updated_at?: string;
+        };
+        Update: Record<string, unknown> & {
+          key?: string;
+          passcode?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

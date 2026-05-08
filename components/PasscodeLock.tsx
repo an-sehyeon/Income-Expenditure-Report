@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { LockKeyhole } from "lucide-react";
-import { isAppPasscode, normalizePasscodeInput } from "@/lib/passcode";
+import { normalizePasscodeInput, verifyAppPasscode } from "@/lib/passcode";
 
 interface PasscodeLockProps {
   onUnlock: () => void;
@@ -11,18 +11,28 @@ interface PasscodeLockProps {
 export function PasscodeLock({ onUnlock }: PasscodeLockProps) {
   const [passcode, setPasscode] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [checking, setChecking] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setChecking(true);
 
-    if (isAppPasscode(passcode)) {
-      setErrorMessage("");
-      onUnlock();
-      return;
+    try {
+      const matched = await verifyAppPasscode(passcode);
+
+      if (matched) {
+        setErrorMessage("");
+        onUnlock();
+        return;
+      }
+
+      setErrorMessage("비밀번호가 일치하지 않습니다.");
+      setPasscode("");
+    } catch {
+      setErrorMessage("비밀번호 확인 중 오류가 발생했습니다.");
+    } finally {
+      setChecking(false);
     }
-
-    setErrorMessage("비밀번호가 일치하지 않습니다.");
-    setPasscode("");
   }
 
   return (
@@ -36,7 +46,7 @@ export function PasscodeLock({ onUnlock }: PasscodeLockProps) {
           <p className="mt-2 text-sm text-app-muted">앱을 사용하려면 4자리 비밀번호를 입력해주세요.</p>
         </div>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+        <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
           <input
             autoFocus
             className="w-full rounded-md border border-app-line bg-app-background px-4 py-4 text-center text-3xl font-bold text-app-ink outline-none focus:border-app-accent"
@@ -52,8 +62,12 @@ export function PasscodeLock({ onUnlock }: PasscodeLockProps) {
             }}
           />
           {errorMessage ? <p className="text-center text-sm font-semibold text-app-expense">{errorMessage}</p> : null}
-          <button className="w-full rounded-md bg-app-ink px-4 py-4 font-bold text-white" type="submit">
-            확인
+          <button
+            className="w-full rounded-md bg-app-ink px-4 py-4 font-bold text-white disabled:opacity-50"
+            disabled={checking}
+            type="submit"
+          >
+            {checking ? "확인 중..." : "확인"}
           </button>
         </form>
       </section>

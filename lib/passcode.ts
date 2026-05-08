@@ -1,10 +1,11 @@
-export const APP_PASSCODE = "6262";
-export const PASSCODE_VALUE_STORAGE_KEY = "app-passcode-value";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+
+export const APP_PASSCODE_SETTING_KEY = "app_passcode";
 export const PASSCODE_STORAGE_KEY = "app-passcode-unlocked-until";
-export const PASSCODE_UNLOCK_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+export const PASSCODE_UNLOCK_DURATION_MS = 3 * 60 * 60 * 1000;
+
 const PASSCODE_PATTERN = /^\d{4}$/;
 
-// APP_PASSCODE는 반드시 숫자 4자리 문자열이어야 합니다. 예: "6262"
 export function isValidPasscodeFormat(value: string): boolean {
   return PASSCODE_PATTERN.test(value);
 }
@@ -13,24 +14,41 @@ export function normalizePasscodeInput(value: string): string {
   return value.replace(/\D/g, "").slice(0, 4);
 }
 
-export function getCurrentPasscode(): string {
-  if (typeof window === "undefined") {
-    return APP_PASSCODE;
+export async function fetchAppPasscode(): Promise<string> {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Supabase 환경변수가 설정되지 않았습니다.");
   }
 
-  const storedPasscode = window.localStorage.getItem(PASSCODE_VALUE_STORAGE_KEY);
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("passcode")
+    .eq("key", APP_PASSCODE_SETTING_KEY)
+    .single();
 
-  return storedPasscode && isValidPasscodeFormat(storedPasscode) ? storedPasscode : APP_PASSCODE;
-}
-
-export function saveCurrentPasscode(value: string): void {
-  if (typeof window === "undefined") {
-    return;
+  if (error) {
+    throw new Error(error.message);
   }
 
-  window.localStorage.setItem(PASSCODE_VALUE_STORAGE_KEY, value);
+  return data.passcode;
 }
 
-export function isAppPasscode(value: string): boolean {
-  return value === getCurrentPasscode();
+export async function verifyAppPasscode(value: string): Promise<boolean> {
+  const passcode = await fetchAppPasscode();
+
+  return value === passcode;
+}
+
+export async function updateAppPasscode(nextPasscode: string): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Supabase 환경변수가 설정되지 않았습니다.");
+  }
+
+  const { error } = await supabase
+    .from("app_settings")
+    .update({ passcode: nextPasscode })
+    .eq("key", APP_PASSCODE_SETTING_KEY);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
